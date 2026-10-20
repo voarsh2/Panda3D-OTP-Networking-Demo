@@ -1,0 +1,39 @@
+from demo.cartesian_grid import DemoCartesianGrid/AI
+from demo.cartesian_grid import DemoGridProbe/AI
+
+dclass DemoCartesianGrid {
+  setCellWidth(uint16 width) required broadcast ram;
+  setParentingRules(string style, string rule) required broadcast ram;
+};
+
+dclass DemoGridProbe {
+  setName(string name = "Cell patrol") required broadcast ram;
+  setComponentL(uint64 l) required broadcast ram;
+  setComponentX(int16 / 10 x) required broadcast ram;
+  setComponentY(int16 / 10 y) required broadcast ram;
+  setComponentZ(int16 / 10 z) required broadcast ram;
+  setComponentH(int16 % 360 / 10 h) required broadcast ram;
+  setComponentP(int16 % 360 / 10 p) required broadcast ram;
+  setComponentR(int16 % 360 / 10 r) required broadcast ram;
+  setComponentT(int16 timestamp) required broadcast ram;
+
+  setSmStop: setComponentT;
+  setSmH: setComponentH, setComponentT;
+  setSmZ: setComponentZ, setComponentT;
+  setSmXY: setComponentX, setComponentY, setComponentT;
+  setSmXZ: setComponentX, setComponentZ, setComponentT;
+  setSmPos: setComponentX, setComponentY, setComponentZ, setComponentT;
+  setSmHpr: setComponentH, setComponentP, setComponentR, setComponentT;
+  setSmXYH: setComponentX, setComponentY, setComponentH, setComponentT;
+  setSmXYZH: setComponentX, setComponentY, setComponentZ, setComponentH, setComponentT;
+  setSmPosHpr: setComponentX, setComponentY, setComponentZ, setComponentH, setComponentP, setComponentR, setComponentT;
+  setSmPosHprL: setComponentL, setComponentX, setComponentY, setComponentZ, setComponentH, setComponentP, setComponentR, setComponentT;
+
+  clearSmoothing(int8 bogus) broadcast;
+  suggestResync(uint32 avId, int16 timestampA, int16 timestampB,
+                int32 serverTimeSec, uint16 serverTimeUSec,
+                uint16 / 100 uncertainty) ownsend clsend;
+  returnResync(uint32 avId, int16 timestampB,
+               int32 serverTimeSec, uint16 serverTimeUSec,
+               uint16 / 100 uncertainty) ownrecv clsend;
+};

@@ -1,0 +1,3 @@
+[submodule "references/panda3d-astron"]
+	path = references/panda3d-astron
+	url = https://github.com/thetestgame/panda3d-astron.git

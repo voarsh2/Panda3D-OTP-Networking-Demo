@@ -1,0 +1,48 @@
+daemon:
+  name: Panda3D OTP Networking Demo (Cartesian grid)
+
+general:
+  dc_files:
+    - ../dclass/demo.dc
+    - ../dclass/cartesian_grid.dc
+
+uberdogs:
+  - id: 1234
+    class: DemoLoginManager
+    anonymous: true
+
+messagedirector:
+  bind: 127.0.0.1:7199
+
+roles:
+  - type: clientagent
+    bind: 127.0.0.1:6667
+    version: "Panda3D OTP Networking Demo 0.1"
+    client:
+      type: libastron
+      add_interest: enabled
+      send_hash: true
+      send_version: false
+    channels:
+      min: 100100
+      max: 199999
+    tuning:
+      interest_timeout: 5000
+
+  - type: stateserver
+    control: 402000
+
+  - type: database
+    control: 403000
+    generate:
+      min: 500000
+      max: 599999
+    backend:
+      type: yaml
+      directory: ../../../demo-data/astron-db
+
+  - type: dbss
+    database: 403000
+    ranges:
+      - min: 500000
+        max: 599999

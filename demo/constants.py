@@ -1,0 +1,33 @@
+from pathlib import Path
+
+VERSION_STRING = "Panda3D OTP Networking Demo 0.1"
+
+MESSAGE_DIRECTOR_HOST = "127.0.0.1"
+MESSAGE_DIRECTOR_PORT = 7199
+CLIENT_AGENT_HOST = "127.0.0.1"
+CLIENT_AGENT_PORT = 6667
+
+LOGIN_MANAGER_ID = 1234
+UD_CHANNEL = 300000
+AI_CHANNEL = 300001
+STATE_SERVER_CHANNEL = 402000
+DATABASE_CHANNEL = 403000
+DATABASE_OBJECT_MIN = 500000
+DATABASE_OBJECT_MAX = 599999
+GAME_ROOT_ID = 4617
+LOGIN_WORLD_ROOT_INTEREST_ID = 0xFFF0
+LOGIN_DISTRICT_INTEREST_ID = 0xFFF1
+# ponytail: one fixed shard keeps this simple; a registry can publish IDs when sharding.
+DISTRICT_ID = 5000
+
+MANAGEMENT_ZONE = 2
+MAIN_ZONE = 1
+LAB_ZONE = 2
+ZONE_CROSSING_X = 4.0
+OUTSIDE_GRID_ZONE = 99
+
+DEMO_DATA_DIR = Path(__file__).resolve().parent.parent / "demo-data"
+PERSISTENT_BEACON_ID_FILE = DEMO_DATA_DIR / "beacon-doid.txt"
+
+DC_FILE = "demo/astron/dclass/demo.dc"
+CARTESIAN_GRID_DC_FILE = "demo/astron/dclass/cartesian_grid.dc"

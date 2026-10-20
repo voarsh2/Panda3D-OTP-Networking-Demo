@@ -1,0 +1,28 @@
+from demo.objects import DemoGameRoot/UD
+from demo.objects import DemoLoginManager/UD
+from demo.objects import DemoDistrict/AI/UD
+from demo.objects import DemoAvatar/AI/OV
+from demo.objects import DemoBeacon/AI
+
+dclass DemoGameRoot {
+};
+
+dclass DemoLoginManager {
+  login(string name) clsend;
+};
+
+dclass DemoDistrict {
+  setParentingRules(string style, string rule) required broadcast ram;
+  setName(string name = "Demo District") required broadcast ram;
+  createAvatar(uint64 clientChannel, string name) airecv;
+};
+
+dclass DemoAvatar {
+  setName(string name = "Guest") required broadcast ram;
+  setPosition(int16 / 100 x, int16 / 100 y) required broadcast ram;
+  requestMove(int8 dx, int8 dy) ownsend airecv;
+};
+
+dclass DemoBeacon {
+  setActivationCount(uint32 count = 0) required broadcast ram db;
+};

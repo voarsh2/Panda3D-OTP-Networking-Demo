@@ -1,0 +1,2 @@
+panda3d==1.10.16
+panda3d-astron==1.1.0
