@@ -2,6 +2,8 @@
 
 The default walkthrough uses fixed District zones. This optional example adds a real Panda3D `DistributedCartesianGridAI` / `DistributedCartesianGrid` pair under the District, a session avatar parented to the grid, and a moving probe. Its classes and required fields are in a separate DC file and Astron config, loaded only by the grid-enabled AI and client.
 
+The grid is a distributed parent with numbered cell zones. The AI moves child objects between cells when they cross cell boundaries; interest separately selects which cells each client receives. Client-local and AI-managed modes use the same grid geometry, but differ in which process requests the cell window. The District's whole-zone interest is a different parent scope; see the [interest guide](interest.md#multiple-interest-layers).
+
 ## What it shows
 
 - `DemoCartesianGridAI` supplies `startingZone=6000`, `gridSize=8`, `gridRadius=1`, and `cellWidth=4`.
@@ -11,7 +13,7 @@ The default walkthrough uses fixed District zones. This optional example adds a 
 - The probe uses `DistributedSmoothNode` telemetry and bounded `posInterval` legs in a captured grid-root frame. Panda's `DistributedCartesianGridAI.updateGridTask` owns cell transitions; movement does not infer a frame-to-frame grid-root delta across a reparent.
 - By default, the client follows its Owner View's position and holds local interest in the current cell and its neighbors. Leaving the grid closes that interest.
 - `DemoWorldGridManagerAI` provides the server-managed counterpart. It allocates an interest ID per avatar starting at 100, sets Panda's reserved server-interest bit, and replaces the zone set when that observer changes cells. `getInterestZones(grid, avatar)` reports the AI's latest requested zone set.
-- Interest updates are sequenced per observer and coalesced to that observer's latest cell while a snapshot is pending. The HUD reports completion state and probe lifecycle.
+- Interest updates are serialized per observer and grid; newer cell changes are coalesced until that operation's callback completes. This can leave one observer's requested window behind their current cell briefly, but it does not pause grid movement or another observer. This is demo-level sequencing, not a production-wide lock. The HUD reports completion state and probe lifecycle.
 
 ## AI-managed interest
 
@@ -79,3 +81,11 @@ python tests/cartesian_grid_live.py --server-grid-interest
 ```
 
 The check moves its session avatar across a cell boundary, then reads completed interest zones, `doId2do`, and the Owner View map. It also verifies the zone 2 beacon appears and leaves view, and that the probe crosses cells, leaves, and re-enters. It uses object lifecycle and location events, with one watchdog. The default watchdog is 90 seconds; raise it with `--timeout` if Astron's `tuning.interest_timeout` or startup time is higher.
+
+## Source map
+
+| Area | File |
+|---|---|
+| Grid geometry, AI-managed interests, and moving probe | [`demo/cartesian_grid.py`](../demo/cartesian_grid.py) |
+| Grid client, HUD, and client-local interest | [`demo/cartesian_grid_client.py`](../demo/cartesian_grid_client.py) |
+| Event-driven live interest check | [`tests/cartesian_grid_live.py`](../tests/cartesian_grid_live.py) |

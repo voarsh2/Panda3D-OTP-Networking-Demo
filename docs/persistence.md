@@ -1,6 +1,6 @@
 # Persistence and object lifetime
 
-The demo compares a short-lived session avatar with one database-backed beacon.
+The demo compares a short-lived session avatar with one database-backed beacon. The [DC field guide](object-flow.md#dc-field-permissions) explains how `ram` and `db` affect their lifetimes.
 
 ## Beacon lifecycle
 
