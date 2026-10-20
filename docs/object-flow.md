@@ -64,10 +64,13 @@ This demo accepts a display name and creates one session avatar in one District.
 
 - **Verify identity and ownership.** UberDOG derives the account from the requesting connection, then checks that the selected avatar belongs to it.
 - **Treat database work as asynchronous.** Account and avatar records arrive through callbacks. Global managers correlate those responses and guard against overlapping operations for the same account.
-- **Separate session from persistence.** The AI creates the live avatar for the session. Persistent assets such as ships are loaded or activated from the database and associated with that avatar; disconnect removes the session object while database fields survive.
+- **Separate session from persistence.** The AI creates the live avatar for the session. Persistent assets such as ships are loaded or activated from the database and associated with that avatar; disconnect removes the session object while database fields survive. A persistent object can also be activated for server-side work while its owner is offline; see [the persistence guide](persistence.md#applying-server-side-logic-to-offline-data).
 - **Coordinate world transitions.** Moving between shards or districts involves object ownership, old and new interests, and cleanup as well as changing a zone.
 
 These are game workflows that can be built over CMU or Astron. Astron's ClientAgent, Message Director, State Server, AI, UberDOG, and database roles give them separate service boundaries; they do not implement the game's account, avatar, or travel rules.
+
+
+Persistence becomes more useful when a game needs to operate on objects whose players are offline. For example, an UberDOG service might award fuel to an offline player's vehicle. The game's server-side logic could activate that database-backed object through DBSS, apply the refill using its normal gameplay rules, and persist the updated fields. DBSS handles the database-backed distributed state; the game's AI or other authoritative service implements the actual refill operation. This is one reason the OTP/Astron service model separates persistence, object state, and game logic rather than tying all three to a connected client.
 
 ## DC field permissions
 

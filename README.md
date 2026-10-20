@@ -23,7 +23,7 @@ The backend responsibilities are split across services:
 | State Server | Holds live object state, ownership, and parent/zone locations. |
 | AI server / repository | Runs authoritative avatar movement and world logic. |
 | UberDOG | Hosts global-object services; here it handles login and avatar/session setup. |
-| Database Server + Database-State Server (DBSS) | The database persists `db` fields; DBSS loads and saves them for active database-backed objects. |
+| Database Server + Database-State Server (DBSS) | The database stores `db` fields; DBSS activates persistent objects into live state for server-side work and writes changed `db` fields back, even without a player session. |
 
 These are logical roles, not a required one-process-per-row layout. This demo runs the Message Director, ClientAgent, State Server, Database Server, and DBSS in one `astrond` daemon. A deployment can split them across hosts and assign different world shards to separate AI servers. The game's login or shard directory chooses an AI shard for each player; the Message Director routes messages among that AI, the State Server, ClientAgents, and other services. See [scaling and load distribution](docs/object-flow.md#scaling-and-load-distribution).
 

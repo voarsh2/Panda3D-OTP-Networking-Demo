@@ -13,3 +13,13 @@ When `DemoBeaconAI` generates, it increments `setActivationCount`. The DC field 
 Avatars are registered with `clientAddSessionObject`. Astron removes that session object when its client disconnects. The beacon is activated from the database and has no client session owner, so its identity and saved field survive the disconnect and service restart.
 
 This is a small persistence example, not account-owned inventory. Login is anonymous, and the beacon ID file and YAML database are local demo state under `demo-data/`.
+
+## Applying server-side logic to offline data
+
+This matters when a game needs to operate on an object whose player is offline. For example, a `CarManager` could request a fuel refill for an offline player's vehicle, or a reward service could grant an offline reward. The authoritative AI or another game service can activate that database-backed object through DBSS, give it the appropriate AI authority, apply the normal game rules, and persist the changed fields. DBSS supplies the live object state and saves its `db` fields; game code validates eligibility and implements the refill or reward. No client session is required.
+
+For a simple field edit that does not need live-object behavior, a direct database query or update may be enough. Activate through DBSS when existing distributed-object or AI logic needs to run against the stored state.
+
+See Astron's [DBSS activation protocol](https://github.com/Astron/Astron/blob/master/docs/protocol/12-stateserver.md) and this demo's [beacon activation code](../demo/persistence.py).
+
+This demo shows a database-backed beacon being activated and saved. It does not implement the offline car or reward workflows.
