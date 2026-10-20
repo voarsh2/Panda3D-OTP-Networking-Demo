@@ -91,6 +91,7 @@ class CartesianGridTests(unittest.TestCase):
         client.grid = None
         client.show_grid = True
         client.server_grid_interest = False
+        client._grid_interest = None
         client._owner_position = None
         client._grid_center = None
         client._interest_radius = None
@@ -100,6 +101,10 @@ class CartesianGridTests(unittest.TestCase):
         client._lab_interest = None
         client._hud_text = None
         client.grid_hud = SimpleNamespace(setText=Mock())
+        client.repo = SimpleNamespace(
+            getServerInterestStates=Mock(return_value=()),
+            getServerInterestZones=Mock(return_value=()),
+        )
 
         with contextlib.redirect_stdout(io.StringIO()):
             DemoCartesianGridClient._set_grid(client, grid)
@@ -131,6 +136,8 @@ class CartesianGridTests(unittest.TestCase):
             addInterest=Mock(return_value=17),
             alterInterest=Mock(),
             removeInterest=Mock(),
+            getServerInterestStates=Mock(return_value=()),
+            getServerInterestZones=Mock(return_value=()),
         )
 
         with patch(
@@ -149,6 +156,7 @@ class CartesianGridTests(unittest.TestCase):
         client = object.__new__(DemoCartesianGridClient)
         client.grid = SimpleNamespace(doId=5001, viewingRadius=1)
         client.server_grid_interest = True
+        client._grid_interest = None
         client._owner_position = (1.0, 2.0)
         client._grid_center = 6035
         client._interest_zones = (6026, 6027, 6028, 6034, 6035, 6036, 6042, 6043, 6044)
@@ -170,6 +178,7 @@ class CartesianGridTests(unittest.TestCase):
         client = object.__new__(DemoCartesianGridClient)
         client.grid = SimpleNamespace(doId=5001, viewingRadius=1)
         client.server_grid_interest = True
+        client._grid_interest = None
         client.show_grid = False
         client._interest_outline = None
         client._grid_center = None
@@ -185,6 +194,7 @@ class CartesianGridTests(unittest.TestCase):
         client.repo = SimpleNamespace(
             doId2do={},
             getServerInterestStates=Mock(return_value=()),
+            getServerInterestZones=Mock(return_value=()),
         )
 
         with patch(
@@ -199,6 +209,28 @@ class CartesianGridTests(unittest.TestCase):
         self.assertIn("Interest source: AI-managed", client.grid_hud.setText.call_args.args[0])
         self.assertIn("AI-managed (WAITING 0/5)", client.grid_hud.setText.call_args.args[0])
         self.assertIn("District zone 2 (Tab): CLOSED", client.grid_hud.setText.call_args.args[0])
+
+        completed_zones = (6026, 6027, 6034, 6035, 6036)
+        client.repo.getServerInterestStates.return_value = (
+            (0x8064, completed_zones, "complete"),
+        )
+        client.repo.getServerInterestZones.return_value = completed_zones
+        client._hud_text = None
+        DemoCartesianGridClient._update_hud(client)
+        self.assertIn(
+            "AI-managed (READY 5/5)",
+            client.grid_hud.setText.call_args.args[0],
+        )
+
+        client.server_grid_interest = False
+        client._grid_interest = InterestHandle(17)
+        client._hud_text = None
+        DemoCartesianGridClient._update_hud(client)
+        self.assertIn(
+            "Interest source: AI-managed + client-local (READY 5/5)",
+            client.grid_hud.setText.call_args.args[0],
+        )
+        client.repo.getServerInterestStates.assert_called_with(5001)
 
         probe = SimpleNamespace(
             doId=300002,
@@ -226,6 +258,7 @@ class CartesianGridTests(unittest.TestCase):
         client = object.__new__(DemoCartesianGridClient)
         client.grid = SimpleNamespace(doId=5001)
         client.server_grid_interest = False
+        client._grid_interest = None
         client.show_grid = False
         client._interest_zones = ()
         client._owner_position = (-2.0, 0.0)
@@ -242,6 +275,8 @@ class CartesianGridTests(unittest.TestCase):
         client.repo = SimpleNamespace(
             addInterest=Mock(return_value=17),
             removeInterest=Mock(),
+            getServerInterestStates=Mock(return_value=()),
+            getServerInterestZones=Mock(return_value=()),
         )
 
         with contextlib.redirect_stdout(io.StringIO()):
@@ -264,30 +299,36 @@ class CartesianGridTests(unittest.TestCase):
             client.grid_hud.setText.call_args.args[0],
         )
 
-    def test_ai_manager_opens_and_closes_server_owned_cell_interests(self):
+    def test_ai_manager_updates_one_server_owned_interest_zone_set(self):
         calls = []
 
         class Air:
-            def __init__(self):
-                self.doId2do = {grid.doId: grid}
-
-            def clientAddInterest(self, channel, handle, parent, zone, callback=None):
-                calls.append(("add", channel, handle, parent, zone, callback, False))
+            def client_add_interest_multiple(
+                self, channel, handle, parent, zones, callback=None
+            ):
+                calls.append(
+                    {
+                        "kind": "add",
+                        "channel": channel,
+                        "handle": handle,
+                        "parent": parent,
+                        "zones": tuple(zones),
+                        "callback": callback,
+                    }
+                )
 
             def client_remove_interest(self, channel, handle, callback=None):
-                calls.append(("remove", channel, handle, None, None, callback, False))
-
-        def complete_interests():
-            for index, call in enumerate(calls):
-                if call[5] is None or call[6]:
-                    continue
-                calls[index] = (*call[:6], True)
-                call[5](call[1], call[2])
+                calls.append(
+                    {
+                        "kind": "remove",
+                        "channel": channel,
+                        "handle": handle,
+                        "callback": callback,
+                    }
+                )
 
         grid = self.grid
         grid.doId = 5001
-        grid.interestSnapshotPending = Mock()
-        grid.interestSnapshotReady = Mock()
         avatar = SimpleNamespace(doId=900001, client_channel=100123)
         manager = DemoWorldGridManagerAI(Air())
         left_center = int(grid.getZoneFromXYZ((-2.0, 0.0, 0.0)))
@@ -297,28 +338,149 @@ class CartesianGridTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             manager.handleLocationChanged(grid, avatar, left_center)
             first_zones = manager.getInterestZones(grid, avatar)
-            complete_interests()
+            first = calls[0]
+            first["callback"](first["channel"], first["handle"])
             manager.handleLocationChanged(grid, avatar, right_center)
             moved_zones = manager.getInterestZones(grid, avatar)
-            complete_interests()
+            second = calls[1]
+            second["callback"](second["channel"], second["handle"])
             manager.handleLocationChanged(grid, avatar, outside_zone)
-            self.assertTrue(manager.hasPendingInterests(grid))
-            complete_interests()
+            removal = calls[2]
+            removal["callback"](removal["channel"], removal["handle"])
+            cleared_zones = manager.getInterestZones(grid, avatar)
+            manager.handleLocationChanged(grid, avatar, left_center)
+            reentry = calls[3]
 
         self.assertEqual(
             first_zones,
             grid_interest_window(grid, (-2.0, 0.0, 0.0))[1],
         )
         self.assertNotEqual(moved_zones, first_zones)
-        self.assertEqual(manager.getInterestZones(grid, avatar), ())
-        adds = [call for call in calls if call[0] == "add"]
-        removes = [call for call in calls if call[0] == "remove"]
-        newly_visible = set(moved_zones) - set(first_zones)
-        no_longer_visible = set(first_zones) - set(moved_zones)
-        self.assertEqual(len(adds), len(first_zones) + len(newly_visible))
-        self.assertEqual(len(removes), len(no_longer_visible) + len(moved_zones))
-        self.assertTrue(all(call[2] & 0x8000 for call in adds))
-        self.assertFalse(manager.hasPendingInterests(grid))
+        self.assertEqual(cleared_zones, ())
+        self.assertEqual(
+            [call["kind"] for call in calls],
+            ["add", "add", "remove", "add"],
+        )
+        self.assertEqual(first["zones"], first_zones)
+        self.assertEqual(second["zones"], moved_zones)
+        self.assertEqual(first["handle"], second["handle"])
+        self.assertEqual(second["handle"], removal["handle"])
+        self.assertEqual(first["handle"], 0x8064)
+        self.assertEqual(first["parent"], grid.doId)
+        self.assertEqual(reentry["handle"], 0x8065)
+
+    def test_interest_id_allocator_skips_fixed_login_ids(self):
+        manager = DemoWorldGridManagerAI(SimpleNamespace())
+        state = {"next_interest_id": 0x7FF0}
+
+        self.assertEqual(manager._allocateInterestId(state), 0xFFF2)
+        self.assertEqual(state["next_interest_id"], 0x7FF3)
+
+    def test_ai_interest_updates_coalesce_per_observer_without_blocking_others(self):
+        calls = []
+        scheduled = []
+
+        class Air:
+            def client_add_interest_multiple(
+                self, channel, handle, parent, zones, callback=None
+            ):
+                calls.append(
+                    {
+                        "channel": channel,
+                        "handle": handle,
+                        "parent": parent,
+                        "zones": tuple(zones),
+                        "callback": callback,
+                    }
+                )
+
+            def client_remove_interest(self, *_args, **_kwargs):
+                raise AssertionError("no interests should be removed")
+
+        def schedule(func, _name, extraArgs, appendTask):
+            self.assertTrue(appendTask)
+            scheduled.append((func, extraArgs))
+
+        grid = self.grid
+        grid.doId = 5001
+        alice = SimpleNamespace(doId=900001, client_channel=100123)
+        bob = SimpleNamespace(doId=900002, client_channel=100124)
+        manager = DemoWorldGridManagerAI(Air())
+        left_center = int(grid.getZoneFromXYZ((-2.0, 0.0, 0.0)))
+        right_center = int(grid.getZoneFromXYZ((2.0, 0.0, 0.0)))
+
+        with (
+            patch("demo.cartesian_grid.taskMgr.add", side_effect=schedule),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            manager.handleLocationChanged(grid, alice, left_center)
+            manager.handleLocationChanged(grid, alice, right_center)
+            manager.handleLocationChanged(grid, bob, left_center)
+
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[0]["channel"], alice.client_channel)
+            self.assertEqual(calls[1]["channel"], bob.client_channel)
+
+            calls[1]["callback"](calls[1]["channel"], calls[1]["handle"])
+            manager.handleLocationChanged(grid, bob, right_center)
+            self.assertEqual(len(calls), 3)
+
+            calls[0]["callback"](calls[0]["channel"], calls[0]["handle"])
+            self.assertEqual(len(scheduled), 1)
+            run_task, extra_args = scheduled.pop()
+            run_task(*extra_args, SimpleNamespace())
+
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(calls[2]["channel"], bob.client_channel)
+        self.assertEqual(calls[3]["channel"], alice.client_channel)
+        self.assertEqual(calls[0]["handle"], calls[3]["handle"])
+        self.assertEqual(calls[0]["zones"], grid_interest_window(grid, (-2, 0, 0))[1])
+        self.assertEqual(calls[3]["zones"], grid_interest_window(grid, (2, 0, 0))[1])
+
+    def test_ai_interest_reentry_waits_for_its_remove_callback(self):
+        calls = []
+        scheduled = []
+
+        class Air:
+            def client_add_interest_multiple(
+                self, channel, handle, parent, zones, callback=None
+            ):
+                calls.append(("add", channel, handle, tuple(zones), callback))
+
+            def client_remove_interest(self, channel, handle, callback=None):
+                calls.append(("remove", channel, handle, (), callback))
+
+        def schedule(func, _name, extraArgs, appendTask):
+            self.assertTrue(appendTask)
+            scheduled.append((func, extraArgs))
+
+        grid = self.grid
+        grid.doId = 5001
+        avatar = SimpleNamespace(doId=900001, client_channel=100123)
+        manager = DemoWorldGridManagerAI(Air())
+        left_center = int(grid.getZoneFromXYZ((-2.0, 0.0, 0.0)))
+        right_center = int(grid.getZoneFromXYZ((2.0, 0.0, 0.0)))
+
+        with (
+            patch("demo.cartesian_grid.taskMgr.add", side_effect=schedule),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            manager.handleLocationChanged(grid, avatar, left_center)
+            calls[0][4](calls[0][1], calls[0][2])
+            manager.clearAvatarInterest(grid, avatar)
+            manager.handleLocationChanged(grid, avatar, right_center)
+            self.assertEqual([call[0] for call in calls], ["add", "remove"])
+
+            calls[1][4](calls[1][1], calls[1][2])
+            run_task, extra_args = scheduled.pop()
+            run_task(*extra_args, SimpleNamespace())
+            calls[2][4](calls[2][1], calls[2][2])
+
+        self.assertEqual([call[0] for call in calls], ["add", "remove", "add"])
+        self.assertEqual(calls[0][2], calls[1][2])
+        self.assertEqual(calls[1][2], calls[2][2])
+        self.assertEqual(calls[2][3], grid_interest_window(grid, (2, 0, 0))[1])
+        self.assertEqual(manager.getInterestZones(grid, avatar), calls[2][3])
 
     def test_probe_patrol_uses_bounded_intervals_in_the_grid_frame(self):
         grid = object()
@@ -361,115 +523,8 @@ class CartesianGridTests(unittest.TestCase):
         sequence.loop.assert_called_once_with()
         probe.startPosHprBroadcast.assert_called_once_with(period=0.2)
 
-    def test_grid_pauses_until_every_new_interest_snapshot_is_done(self):
-        calls = []
-
-        class Air:
-            def __init__(self):
-                self.doId2do = {grid.doId: grid}
-
-            def clientAddInterest(self, channel, handle, parent, zone, callback=None):
-                calls.append((channel, handle, callback))
-
-            def client_remove_interest(self, *_args, **_kwargs):
-                raise AssertionError("no interests should be removed")
-
-        grid = self.grid
-        grid.doId = 5001
-        grid.interestSnapshotPending = Mock()
-        grid.interestSnapshotReady = Mock()
-        avatar = SimpleNamespace(doId=900001, client_channel=100123)
-        manager = DemoWorldGridManagerAI(Air())
-        center = int(grid.getZoneFromXYZ((0.0, 0.0, 0.0)))
-
-        with contextlib.redirect_stdout(io.StringIO()):
-            manager.handleLocationChanged(grid, avatar, center)
-
-        self.assertTrue(manager.hasPendingInterests(grid))
-        grid.interestSnapshotPending.assert_called_once_with()
-        grid.interestSnapshotReady.assert_not_called()
-        calls[0][2](calls[0][0], calls[0][1])
-        self.assertTrue(manager.hasPendingInterests(grid))
-        grid.interestSnapshotReady.assert_not_called()
-
-        for channel, handle, callback in calls[1:]:
-            callback(channel, handle)
-
-        self.assertFalse(manager.hasPendingInterests(grid))
-        grid.interestSnapshotReady.assert_called_once_with()
-
-    def test_missing_interest_done_callback_keeps_demo_grid_barrier_closed(self):
-        calls = []
-
-        class Air:
-            def __init__(self):
-                self.doId2do = {grid.doId: grid}
-
-            def clientAddInterest(self, channel, handle, parent, zone, callback=None):
-                calls.append((channel, handle, callback))
-
-            def client_remove_interest(self, *_args, **_kwargs):
-                raise AssertionError("no interests should be removed")
-
-        grid = self.grid
-        grid.doId = 5001
-        grid.interestSnapshotPending = Mock()
-        grid.interestSnapshotReady = Mock()
-        avatar = SimpleNamespace(doId=900001, client_channel=100123)
-        manager = DemoWorldGridManagerAI(Air())
-        center = int(grid.getZoneFromXYZ((0.0, 0.0, 0.0)))
-
-        with contextlib.redirect_stdout(io.StringIO()):
-            manager.handleLocationChanged(grid, avatar, center)
-
-        self.assertEqual(len(calls), len(grid_interest_window(grid, (0, 0, 0))[1]))
-        self.assertTrue(manager.hasPendingInterests(grid))
-        grid.interestSnapshotPending.assert_called_once_with()
-        grid.interestSnapshotReady.assert_not_called()
-
-    def test_grid_defers_removal_until_an_inflight_add_finishes(self):
-        calls = []
-
-        class Air:
-            def __init__(self):
-                self.doId2do = {grid.doId: grid}
-
-            def clientAddInterest(self, channel, handle, parent, zone, callback=None):
-                calls.append(("add", channel, handle, callback))
-
-            def client_remove_interest(self, channel, handle, callback=None):
-                calls.append(("remove", channel, handle, callback))
-
-        grid = self.grid
-        grid.doId = 5001
-        grid.interestSnapshotPending = Mock()
-        grid.interestSnapshotReady = Mock()
-        avatar = SimpleNamespace(doId=900001, client_channel=100123)
-        manager = DemoWorldGridManagerAI(Air())
-        center = int(grid.getZoneFromXYZ((0.0, 0.0, 0.0)))
-
-        with contextlib.redirect_stdout(io.StringIO()):
-            manager.handleLocationChanged(grid, avatar, center)
-            manager.clearAvatarInterest(grid, avatar)
-
-        self.assertFalse(any(call[0] == "remove" for call in calls))
-        self.assertTrue(manager.hasPendingInterests(grid))
-
-        for kind, channel, handle, callback in tuple(calls):
-            if kind == "add":
-                callback(channel, handle)
-        removes = [call for call in calls if call[0] == "remove"]
-        self.assertEqual(len(removes), len(grid_interest_window(grid, (0, 0, 0))[1]))
-        self.assertTrue(manager.hasPendingInterests(grid))
-
-        for _, channel, handle, callback in removes:
-            callback(channel, handle)
-
-        self.assertFalse(manager.hasPendingInterests(grid))
-
-
-    def test_client_marks_ai_interest_for_removal_until_done_response(self):
-        handle = 0x8001
+    def test_remote_interest_removal_marks_interest_pending_delete(self):
+        handle = 0x8064
         state = InterestState(
             "server grid interest",
             InterestState.StateActive,
@@ -502,8 +557,42 @@ class CartesianGridTests(unittest.TestCase):
         finally:
             DoInterestManager._interests.pop(handle, None)
 
-    def test_client_only_reports_server_interest_after_done_response(self):
-        handle = 0x8001
+    def test_client_local_interest_removal_avoids_server_cleanup(self):
+        handle = 17
+        state = InterestState(
+            "local grid interest",
+            InterestState.StateActive,
+            7,
+            None,
+            5001,
+            [GRID_STARTING_ZONE],
+            SimpleNamespace(num=0),
+            True,
+        )
+        DoInterestManager._interests[handle] = state
+        client = DemoClientRepository.__new__(DemoClientRepository)
+
+        class Datagram:
+            values = iter((19, handle))
+
+            def get_uint32(self):
+                return next(self.values)
+
+            def get_uint16(self):
+                return next(self.values)
+
+        try:
+            with patch("demo.client.messenger.send") as send:
+                DemoClientRepository.handle_remove_interest(client, Datagram())
+
+            self.assertEqual(state.state, InterestState.StateActive)
+            self.assertEqual(state.context, 7)
+            send.assert_called_once_with("CLIENT_REMOVE_INTEREST", [19, handle])
+        finally:
+            DoInterestManager._interests.pop(handle, None)
+
+    def test_client_reports_server_interest_pending_until_done_response(self):
+        handle = 0x8064
         state = InterestState(
             "server grid interest",
             InterestState.StateActive,
@@ -529,7 +618,7 @@ class CartesianGridTests(unittest.TestCase):
             DoInterestManager._interests.pop(handle, None)
 
     def test_client_done_response_marks_server_interest_complete(self):
-        handle = 0x8002
+        handle = 0x8065
         state = InterestState(
             "server grid interest",
             InterestState.StateActive,
@@ -594,6 +683,46 @@ class CartesianGridTests(unittest.TestCase):
         repository = DemoClientRepository.__new__(DemoClientRepository)
 
         self.assertEqual(repository.getClientInterestZones(handle), (6035, 6036))
+
+    def test_interest_inspection_separates_server_and_client_handles(self):
+        local_id = 17
+        server_id = 0x8064
+        local_state = InterestState(
+            "local grid interest",
+            InterestState.StateActive,
+            0,
+            None,
+            5001,
+            [6035],
+            SimpleNamespace(num=0),
+            True,
+        )
+        server_state = InterestState(
+            "AI grid interest",
+            InterestState.StateActive,
+            0,
+            None,
+            5001,
+            [6034, 6035, 6036],
+            SimpleNamespace(num=0),
+            True,
+        )
+        DoInterestManager._interests[local_id] = local_state
+        DoInterestManager._interests[server_id] = server_state
+        self.addCleanup(DoInterestManager._interests.pop, local_id, None)
+        self.addCleanup(DoInterestManager._interests.pop, server_id, None)
+        repository = DemoClientRepository.__new__(DemoClientRepository)
+        repository._server_interest_pending = set()
+        repository._server_interest_complete = {server_id}
+
+        self.assertEqual(
+            repository.getServerInterestStates(5001),
+            ((server_id, (6034, 6035, 6036), "complete"),),
+        )
+        self.assertEqual(
+            repository.getServerInterestZones(5001),
+            (6034, 6035, 6036),
+        )
 
     def test_ai_repository_dispatches_interest_completion_to_registered_callback(self):
         repository = DemoAIRepository.__new__(DemoAIRepository)

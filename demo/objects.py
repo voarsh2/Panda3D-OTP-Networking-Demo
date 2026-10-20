@@ -281,7 +281,6 @@ class DemoAvatarAI(DistributedNodeAI):
         self.dx = 0
         self.dy = 0
         self._move_task = None
-        self._interest_paused = False
         self.client_channel = None
         self.cartesian_grid = None
         self.grid_interest_manager = None
@@ -299,25 +298,7 @@ class DemoAvatarAI(DistributedNodeAI):
         if self._move_task is not None:
             base.taskMgr.remove(self._move_task)
             self._move_task = None
-        self._interest_paused = False
         super().delete()
-
-    def pauseForInterest(self):
-        if self._interest_paused:
-            return
-        self._interest_paused = True
-        if self._move_task is not None:
-            base.taskMgr.remove(self._move_task)
-            self._move_task = None
-
-    def resumeAfterInterest(self):
-        if not self._interest_paused:
-            return
-        self._interest_paused = False
-        if self.air.doId2do.get(self.doId) is self:
-            self._move_task = base.taskMgr.add(
-                self._update_position, self.uniqueName("move")
-            )
 
     def getName(self):
         return self.name

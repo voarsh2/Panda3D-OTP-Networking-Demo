@@ -9,7 +9,7 @@
 | Client-local grid | Client | Current grid cell and its neighbors, based on the Owner View position |
 | AI-managed grid | AI through ClientAgent | Current grid cell and its neighbors, based on the avatar's server-side location |
 
-The grid paths are optional and can run independently. Compare their commands and lifecycle in [the Cartesian grid guide](cartesian-grid.md). The AI-managed path waits for ClientAgent interest-completion callbacks before resuming grid-child movement.
+The grid paths are optional and can run independently. Compare their commands and lifecycle in [the Cartesian grid guide](cartesian-grid.md). AI-managed mode keeps a server-owned cell-window interest per observer.
 
 ## Fixed District zones
 

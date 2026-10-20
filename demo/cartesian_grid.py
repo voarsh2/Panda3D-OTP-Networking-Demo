@@ -5,6 +5,8 @@ from direct.distributed.DistributedSmoothNodeAI import DistributedSmoothNodeAI
 from direct.interval.IntervalGlobal import Sequence
 from direct.interval.LerpInterval import LerpPosInterval
 from direct.showbase.MessengerGlobal import messenger
+from direct.task import Task
+from direct.task.TaskManagerGlobal import taskMgr
 from panda3d.core import Point3, TextNode
 
 from demo.constants import (
@@ -59,96 +61,107 @@ def _grid_contains(grid, x, y):
 
 
 class DemoWorldGridManagerAI:
-    """Open and close a player's grid-cell interests from the AI server."""
+    """Update one server-owned grid-zone set per observing avatar."""
 
-    FIRST_INTEREST_ID = 0x8000
+    FIRST_INTEREST_ID = 100
 
     def __init__(self, air):
         self.air = air
         self._avatars = {}
 
-    def hasPendingInterests(self, grid):
-        return self.hasPendingInterestsForId(grid.doId)
-
-    def hasPendingInterestsForId(self, grid_id):
-        # This teaching demo uses one grid-wide barrier for all observers.
-        return any(
-            state["pending_adds"].get(grid_id)
-            or state["pending_removes"].get(grid_id)
-            for state in self._avatars.values()
+    def _allocateInterestId(self, state):
+        interest_id = state["next_interest_id"]
+        reserved_ids = (
+            LOGIN_DISTRICT_INTEREST_ID & 0x7FFF,
+            LOGIN_WORLD_ROOT_INTEREST_ID & 0x7FFF,
         )
-
-    def _allocateHandle(self, state):
-        while True:
-            handle = state["next_handle"]
-            state["next_handle"] += 1
-            if state["next_handle"] > 0xFFFF:
-                state["next_handle"] = self.FIRST_INTEREST_ID
-            if handle not in state["allocated_handles"] and handle not in (
-                LOGIN_DISTRICT_INTEREST_ID,
-                LOGIN_WORLD_ROOT_INTEREST_ID,
-            ):
-                state["allocated_handles"].add(handle)
-                return handle
+        while interest_id in reserved_ids:
+            interest_id += 1
+        if interest_id > 0x7FFF:
+            raise RuntimeError("server-managed interest ID range exhausted")
+        state["next_interest_id"] = interest_id + 1
+        # allocates raw IDs from 100; Panda reserves bit 15 for AI interests.
+        return interest_id | 0x8000
 
     def _cleanupAvatar(self, avatar_id, state):
-        if (
-            not state["grids"]
-            and not any(state["pending_adds"].values())
-            and not any(state["pending_removes"].values())
-            and not state["retire_after_add"]
-            and not state["retiring_handles"]
-        ):
+        if state["closing"] and not state["grids"]:
             self._avatars.pop(avatar_id, None)
 
-    def _removeInterest(self, avatar_id, grid_id, state, handle):
-        state["pending_removes"].setdefault(grid_id, set()).add(handle)
-        state["retiring_handles"].add(handle)
-        self.air.client_remove_interest(
-            state["client_channel"],
-            handle,
-            callback=lambda _channel, _interest_id, avatar_id=avatar_id,
-            grid_id=grid_id, interest_id=handle: self._interestRemoved(
-                avatar_id, grid_id, interest_id
-            ),
+    def _finishInterest(self, avatar_id, grid_id, state, interest):
+        if state["grids"].get(grid_id) is interest:
+            state["grids"].pop(grid_id)
+        self._cleanupAvatar(avatar_id, state)
+
+    def _interestOperationDone(self, avatar_id, grid_id, handle):
+        state = self._avatars.get(avatar_id)
+        if state is None:
+            return
+        interest = state["grids"].get(grid_id)
+        if interest is None or interest["handle"] != handle:
+            return
+
+        if interest["operation"] == "add":
+            interest["zones"] = interest["operation_zones"]
+        elif interest["operation"] == "remove":
+            interest["zones"] = ()
+        else:
+            return
+        interest["operation"] = None
+        interest["operation_zones"] = ()
+
+        if not interest["desired_zones"] and not interest["zones"]:
+            self._finishInterest(avatar_id, grid_id, state, interest)
+        elif interest["desired_zones"] != interest["zones"]:
+            self._scheduleInterestUpdate(avatar_id, grid_id, interest)
+
+    def _scheduleInterestUpdate(self, avatar_id, grid_id, interest):
+        if interest["scheduled"]:
+            return
+        interest["scheduled"] = True
+        # callbacks key on handle; add operation contexts to overlap updates.
+        taskMgr.add(
+            self._runScheduledInterestUpdate,
+            f"demo-grid-interest-{avatar_id}-{grid_id}",
+            extraArgs=[avatar_id, grid_id, interest["handle"]],
+            appendTask=True,
         )
 
-    def _notifyReadyIfComplete(self, grid_id):
-        if self.hasPendingInterestsForId(grid_id):
-            return
-        grid = self.air.doId2do.get(grid_id)
-        if grid is not None:
-            grid.interestSnapshotReady()
-
-    def _interestAdded(self, avatar_id, grid_id, handle):
+    def _runScheduledInterestUpdate(self, avatar_id, grid_id, handle, _task):
         state = self._avatars.get(avatar_id)
-        if state is None:
-            return
-        pending = state["pending_adds"].get(grid_id)
-        if pending is not None:
-            pending.discard(handle)
-            if not pending:
-                state["pending_adds"].pop(grid_id, None)
+        interest = state["grids"].get(grid_id) if state is not None else None
+        if interest is None or interest["handle"] != handle:
+            return Task.done
+        interest["scheduled"] = False
+        self._sendInterestUpdate(avatar_id, grid_id, state, interest)
+        return Task.done
 
-        if handle in state["retire_after_add"]:
-            state["retire_after_add"].discard(handle)
-            self._removeInterest(avatar_id, grid_id, state, handle)
-        self._notifyReadyIfComplete(grid_id)
-        self._cleanupAvatar(avatar_id, state)
-
-    def _interestRemoved(self, avatar_id, grid_id, handle):
-        state = self._avatars.get(avatar_id)
-        if state is None:
+    def _sendInterestUpdate(self, avatar_id, grid_id, state, interest):
+        if interest["operation"] is not None:
             return
-        pending = state["pending_removes"].get(grid_id)
-        if pending is not None:
-            pending.discard(handle)
-            if not pending:
-                state["pending_removes"].pop(grid_id, None)
-        state["retiring_handles"].discard(handle)
-        state["allocated_handles"].discard(handle)
-        self._notifyReadyIfComplete(grid_id)
-        self._cleanupAvatar(avatar_id, state)
+        if interest["desired_zones"] == interest["zones"]:
+            if not interest["desired_zones"]:
+                self._finishInterest(avatar_id, grid_id, state, interest)
+            return
+
+        handle = interest["handle"]
+        callback = lambda _channel, _interest_id: self._interestOperationDone(
+            avatar_id, grid_id, handle
+        )
+        if interest["desired_zones"]:
+            interest["operation"] = "add"
+            interest["operation_zones"] = interest["desired_zones"]
+            self.air.client_add_interest_multiple(
+                state["client_channel"],
+                handle,
+                grid_id,
+                list(interest["operation_zones"]),
+                callback=callback,
+            )
+        else:
+            interest["operation"] = "remove"
+            self.air.client_remove_interest(
+                state["client_channel"], handle, callback=callback
+            )
 
     def handleLocationChanged(self, grid, avatar, center_zone):
         if not grid.isValidZone(center_zone):
@@ -159,52 +172,32 @@ class DemoWorldGridManagerAI:
             avatar.doId,
             {
                 "client_channel": avatar.client_channel,
-                "next_handle": self.FIRST_INTEREST_ID,
+                "next_interest_id": self.FIRST_INTEREST_ID,
                 "grids": {},
-                "pending_adds": {},
-                "pending_removes": {},
-                "retire_after_add": set(),
-                "retiring_handles": set(),
-                "allocated_handles": set(),
+                "closing": False,
             },
         )
-        handles = state["grids"].setdefault(grid.doId, {})
-        wanted = set(grid_interest_zones(grid, center_zone, grid.gridRadius))
-        added = wanted - set(handles)
-        removed = set(handles) - wanted
-        if not added and not removed:
+        interest = state["grids"].get(grid.doId)
+        if interest is None:
+            interest = {
+                "handle": self._allocateInterestId(state),
+                "zones": (),
+                "desired_zones": (),
+                "operation": None,
+                "operation_zones": (),
+                "scheduled": False,
+            }
+            state["grids"][grid.doId] = interest
+
+        wanted = grid_interest_zones(grid, center_zone, grid.gridRadius)
+        if wanted == interest["desired_zones"]:
             return
-        grid.interestSnapshotPending()
-
-        for zone_id in sorted(added):
-            handle = self._allocateHandle(state)
-            handles[zone_id] = handle
-            state["pending_adds"].setdefault(grid.doId, set()).add(handle)
-            self.air.clientAddInterest(
-                state["client_channel"],
-                handle,
-                grid.doId,
-                zone_id,
-                callback=lambda _channel, _interest_id, avatar_id=avatar.doId,
-                grid_id=grid.doId, interest_id=handle: self._interestAdded(
-                    avatar_id, grid_id, interest_id
-                ),
-            )
-
-        for zone_id in sorted(removed):
-            handle = handles.pop(zone_id)
-            if handle in state["pending_adds"].get(grid.doId, ()):
-                state["retire_after_add"].add(handle)
-            else:
-                self._removeInterest(avatar.doId, grid.doId, state, handle)
-        if not handles:
-            del state["grids"][grid.doId]
-        if not state["grids"]:
-            self._cleanupAvatar(avatar.doId, state)
+        interest["desired_zones"] = wanted
+        self._sendInterestUpdate(avatar.doId, grid.doId, state, interest)
 
         print(
             f"AI grid interest avatar={avatar.doId} parent={grid.doId} "
-            f"center={center_zone} zones={sorted(wanted)}",
+            f"center={center_zone} zones={list(wanted)}",
             flush=True,
         )
 
@@ -212,45 +205,34 @@ class DemoWorldGridManagerAI:
         state = self._avatars.get(avatar.doId)
         if state is None:
             return ()
-        return tuple(sorted(state["grids"].get(grid.doId, {})))
+        interest = state["grids"].get(grid.doId)
+        return interest["desired_zones"] if interest is not None else ()
+
+    def _clearInterest(self, avatar_id, grid_id, state):
+        interest = state["grids"].get(grid_id)
+        if interest is None:
+            return
+        if interest["desired_zones"]:
+            interest["desired_zones"] = ()
+            print(
+                f"AI grid interest avatar={avatar_id} parent={grid_id} zones=[]",
+                flush=True,
+            )
+        self._sendInterestUpdate(avatar_id, grid_id, state, interest)
 
     def clearAvatarInterest(self, grid, avatar):
         state = self._avatars.get(avatar.doId)
         if state is None:
             return
-        handles = state["grids"].pop(grid.doId, {})
-        if handles:
-            grid.interestSnapshotPending()
-        for handle in handles.values():
-            if handle in state["pending_adds"].get(grid.doId, ()):
-                state["retire_after_add"].add(handle)
-            else:
-                self._removeInterest(avatar.doId, grid.doId, state, handle)
-        if not state["grids"]:
-            self._cleanupAvatar(avatar.doId, state)
-        if not handles:
-            return
-        print(
-            f"AI grid interest avatar={avatar.doId} parent={grid.doId} "
-            "zones=[]",
-            flush=True,
-        )
+        self._clearInterest(avatar.doId, grid.doId, state)
 
     def clearAvatarInterests(self, avatar):
         state = self._avatars.get(avatar.doId)
         if state is None:
             return
+        state["closing"] = True
         for grid_id in tuple(state["grids"]):
-            grid = self.air.doId2do.get(grid_id)
-            if grid is None:
-                handles = state["grids"].pop(grid_id)
-                for handle in handles.values():
-                    if handle in state["pending_adds"].get(grid_id, ()):
-                        state["retire_after_add"].add(handle)
-                    else:
-                        self._removeInterest(avatar.doId, grid_id, state, handle)
-            else:
-                self.clearAvatarInterest(grid, avatar)
+            self._clearInterest(avatar.doId, grid_id, state)
         self._cleanupAvatar(avatar.doId, state)
 
 
@@ -274,28 +256,6 @@ class DemoCartesianGridAI(DistributedCartesianGridAI):
             GRID_RADIUS,
             GRID_CELL_WIDTH,
         )
-        self._paused_grid_objects = set()
-        self._grid_update_paused = False
-
-    def interestSnapshotReady(self):
-        for child in tuple(self._paused_grid_objects):
-            self._paused_grid_objects.discard(child)
-            if not child.isEmpty():
-                child.resumeAfterInterest()
-        if self._grid_update_paused:
-            self._grid_update_paused = False
-            if self.gridObjects:
-                self.startUpdateGridTask()
-        print(f"AI grid interests ready for grid={self.doId}.", flush=True)
-
-    def interestSnapshotPending(self):
-        if self.updateTaskStarted:
-            self.stopUpdateGridTask()
-            self._grid_update_paused = True
-        for child in tuple(self.gridObjects.values()):
-            if hasattr(child, "pauseForInterest"):
-                child.pauseForInterest()
-                self._paused_grid_objects.add(child)
 
     def handleChildArrive(self, child, zone_id):
         super().handleChildArrive(child, zone_id)
@@ -405,7 +365,6 @@ class DemoGridProbeAI(DistributedSmoothNodeAI):
         self.name = "Cell patrol"
         self._grid = None
         self._move_interval = None
-        self._interest_paused = False
 
     def generate(self):
         super().generate()
@@ -416,25 +375,7 @@ class DemoGridProbeAI(DistributedSmoothNodeAI):
             self._move_interval.pause()
             self._move_interval = None
         self.stopPosHprBroadcast()
-        self._interest_paused = False
         super().delete()
-
-    def pauseForInterest(self):
-        if self._interest_paused:
-            return
-        self._interest_paused = True
-        if self._move_interval is not None:
-            self._move_interval.pause()
-        self.stopPosHprBroadcast()
-
-    def resumeAfterInterest(self):
-        if not self._interest_paused:
-            return
-        self._interest_paused = False
-        if self._move_interval is not None:
-            self._move_interval.resume()
-        if self.air.doId2do.get(self.doId) is self:
-            self.startPosHprBroadcast(period=0.2)
 
     def getName(self):
         return self.name

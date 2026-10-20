@@ -31,6 +31,7 @@ class DemoClientRepository(AstronClientRepository):
         super().add_internal_interest_handle(
             context, interest_id, parent_id, zones
         )
+        # DoInterestManager reserves bit 15 for interests controlled by the AI.
         if interest_id & 0x8000:
             self._server_interest_pending.add(interest_id)
             self._server_interest_complete.discard(interest_id)
@@ -107,13 +108,13 @@ class DemoClientRepository(AstronClientRepository):
     def handle_remove_interest(self, di):
         context = di.get_uint32()
         interest_id = di.get_uint16()
-        if interest_id & 0x8000:
-            state = DoInterestManager._interests.get(interest_id)
-            if state is not None:
-                state.clearEvents()
-                state.state = InterestState.StatePendingDel
-                state.context = context
-                self._considerRemoveInterest(interest_id)
+        state = DoInterestManager._interests.get(interest_id)
+        # DoInterestManager owns local removal state; AI IDs need this extra cleanup.
+        if interest_id & 0x8000 and state is not None:
+            state.clearEvents()
+            state.state = InterestState.StatePendingDel
+            state.context = context
+            self._considerRemoveInterest(interest_id)
         messenger.send("CLIENT_REMOVE_INTEREST", [context, interest_id])
 
     def handleObjectLocation(self, di):

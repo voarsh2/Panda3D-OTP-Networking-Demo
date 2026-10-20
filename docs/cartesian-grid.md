@@ -10,18 +10,14 @@ The default walkthrough uses fixed District zones. This optional example adds a 
 - The AI adds the avatar and a moving `DemoGridProbe` to the grid. Panda3D's grid task changes their State Server zones as they cross cell boundaries; `GridParent` preserves their world positions relative to each cell.
 - The probe uses `DistributedSmoothNode` telemetry and bounded `posInterval` legs in a captured grid-root frame. Panda's `DistributedCartesianGridAI.updateGridTask` owns cell transitions; movement does not infer a frame-to-frame grid-root delta across a reparent.
 - By default, the client follows its Owner View's position and holds local interest in the current cell and its neighbors. Leaving the grid closes that interest.
-- `DemoWorldGridManagerAI` provides the server-managed counterpart. Grid child arrival, cell-change, and leave hooks open and clear one ClientAgent interest per visible cell. `getInterestZones(grid, avatar)` reports the AI's requested zone set.
-- Server-opened handles use the high-bit ID range. The AI waits for ClientAgent completion callbacks before resuming grid-child movement; the client reports received handle state and `doId2do` membership for the moving probe.
+- `DemoWorldGridManagerAI` provides the server-managed counterpart. It allocates an interest ID per avatar starting at 100, sets Panda's reserved server-interest bit, and replaces the zone set when that observer changes cells. `getInterestZones(grid, avatar)` reports the AI's latest requested zone set.
+- Interest updates are sequenced per observer and coalesced to that observer's latest cell while a snapshot is pending. The HUD reports completion state and probe lifecycle.
 
-## Demo synchronization limit
+## AI-managed interest
 
-`interestSnapshotPending()` pauses the grid update task and all tracked grid-child movement while any avatar has an unfinished interest operation. That global barrier avoids broadcasting changes into a view whose initial objects may still be generating. It also means one slow avatar pauses every player sharing this grid, so it is a demonstration strategy rather than a production-wide policy. A production MMO should sequence or buffer visibility per observer and let unrelated players continue moving.
+Both Astron configs set the ClientAgent `interest_timeout` to 5 seconds. Raise it under the ClientAgent role's `tuning` section if needed.
 
-If a completion callback never arrives, this demo's barrier stays closed. Astron's configured ClientAgent `interest_timeout` normally forces completion, but a disconnected agent can still leave the grid paused. There is no local watchdog: resuming blindly could send fields before the client has generated the objects.
-
-The probe leaves and re-enters the client repository when it crosses the edge of the owner's interest window. That is the expected AOI lifecycle; the client logs `doId2do` membership on both events. Both Astron configs set the ClientAgent `interest_timeout` to 5 seconds. A heavily loaded machine may need a longer value under the role's `tuning` section.
-
-During login, UberDOG opens the GameGlobals management interest and then District main interest, waiting for both ClientAgent callbacks before asking the AI to create the avatar. The grid is therefore in the client repository before AI-managed cell interests open. The AI generates the avatar directly in its initial grid cell. When it moves beyond the grid bounds, the AI moves it to an unobserved District zone; returning to the grid reparents it and opens the interest window again. The session avatar uses a simple AI-authored `setPosition` field; only the patrol probe demonstrates SmoothNode telemetry.
+The live check verifies the probe's generated, out-of-interest, and re-entry states through its zone and `doId2do` membership. Leaving the grid moves the session avatar to the District's outside-grid zone; returning places it under the grid again.
 
 ## Run it
 
@@ -60,7 +56,7 @@ Start a client with local grid interest disabled so the AI manager is the only g
 python -m demo.cartesian_grid_client --name Alice --server-grid-interest
 ```
 
-Move beyond the grid edge (x or y reaches 16). The AI reports its requested zone set and closes every server-opened cell interest. Move back in to reopen the window. The client prints interest handles as pending, complete, or removing, alongside whether each probe object is present in `doId2do` and generated.
+Move beyond the grid edge (x or y reaches 16). The AI reports an empty zone set and removes that observer's single grid interest. Move back in to reopen the window. The client shows the server interest's pending, complete, or removing state, alongside whether each probe object is present in `doId2do` and generated.
 
 The local and AI-managed paths can also be run together to compare them; for a single-source run, use the command pair above. The HUD shows the interest source, observer cell, radius, District zone 2 state, and probe ID/zone/lifecycle. With `--show-grid`, cyan outlines mark the current interest window while leaving cell labels visible. `--offscreen` runs without a visible window.
 

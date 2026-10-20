@@ -102,6 +102,9 @@ class DemoCartesianGridClient(DemoClient):
     def _on_server_interest_state_changed(self, *_args):
         self._update_hud()
 
+    def _server_grid_interest_states(self, parent_id):
+        return self.repo.getServerInterestStates(parent_id)
+
     def _update_grid_interest(self):
         if self.grid is None:
             self._update_hud()
@@ -176,26 +179,35 @@ class DemoCartesianGridClient(DemoClient):
         else:
             observer_cell = self._grid_center
 
-        source = (
-            "AI-managed"
-            if self.server_grid_interest
-            else "client-local"
+        states = (
+            self._server_grid_interest_states(self.grid.doId)
+            if self.grid is not None
+            else ()
         )
-        if source == "AI-managed":
-            expected = len(self._interest_zones)
-            states = (
-                self.repo.getServerInterestStates(self.grid.doId)
+        if self.server_grid_interest:
+            source = "AI-managed"
+        elif states:
+            source = "AI-managed + client-local"
+        else:
+            source = "client-local"
+
+        if self.server_grid_interest or states:
+            expected_zones = tuple(self._interest_zones)
+            completed_zones = (
+                self.repo.getServerInterestZones(self.grid.doId)
                 if self.grid is not None
                 else ()
             )
-            active = [state for _, _, state in states if state != "removing"]
-            complete = sum(state == "complete" for state in active)
-            if not expected:
-                snapshot = "outside grid"
-            elif complete == expected:
-                snapshot = f"READY {complete}/{expected}"
+            if not expected_zones:
+                snapshot = "outside grid" if not states else "closing"
+            elif (
+                states
+                and all(state == "complete" for _, _, state in states)
+                and completed_zones == expected_zones
+            ):
+                snapshot = f"READY {len(completed_zones)}/{len(expected_zones)}"
             else:
-                snapshot = f"WAITING {complete}/{expected}"
+                snapshot = f"WAITING {len(completed_zones)}/{len(expected_zones)}"
         else:
             snapshot = "client-local"
         legend = (
@@ -224,7 +236,7 @@ class DemoCartesianGridClient(DemoClient):
             f"id={probe.doId} parent={probe.parentId} zone={probe.zoneId} "
             f"inRepository={self.repo.doId2do.get(probe.doId) is probe} "
             f"generated={probe.isGenerated()} "
-            f"serverInterestStates={self.repo.getServerInterestStates(probe.parentId)}"
+            f"serverInterestStates={self._server_grid_interest_states(probe.parentId)}"
         )
 
     def _inspect_probe(self, probe):
@@ -238,7 +250,7 @@ class DemoCartesianGridClient(DemoClient):
             f"DO DemoGridProbe entered view: id={probe.doId} "
             f"parent={probe.parentId} zone={probe.zoneId} "
             f"inRepository={present} "
-            f"serverInterestStates={self.repo.getServerInterestStates(probe.parentId)}",
+            f"serverInterestStates={self._server_grid_interest_states(probe.parentId)}",
             flush=True,
         )
 
@@ -256,7 +268,7 @@ class DemoCartesianGridClient(DemoClient):
             f"({old_parent}, {old_zone}) -> ({probe.parentId}, {probe.zoneId}) "
             f"inRepository={self.repo.doId2do.get(probe.doId) is probe} "
             f"generated={probe.isGenerated()} "
-            f"serverInterestStates={self.repo.getServerInterestStates(probe.parentId)}",
+            f"serverInterestStates={self._server_grid_interest_states(probe.parentId)}",
             flush=True,
         )
 
