@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from direct.distributed.DistributedObject import DistributedObject
 from direct.distributed.DistributedObjectAI import DistributedObjectAI
 from direct.distributed.DistributedNode import DistributedNode
 
@@ -16,8 +17,6 @@ from demo.inspect import (
     beacon_snapshot,
     DemoInspector,
 )
-from direct.distributed.DistributedObject import DistributedObject
-
 from demo.objects import DemoAvatar, DemoBeacon, DemoBeaconAI
 from demo.persistence import ensure_persistent_beacon
 
@@ -58,9 +57,9 @@ class PersistentBeaconTests(unittest.TestCase):
         self.id_file.write_text("500124\n", encoding="utf-8")
         queries = []
 
-        def query_object(database_id, do_id, callback, dclass=None):
-            queries.append((database_id, do_id, dclass))
-            callback(dclass, {"setActivationCount": (3,)})
+        def query_object(database_id, do_id, callback):
+            queries.append((database_id, do_id))
+            callback(self.dclass, {"setActivationCount": (3,)})
 
         self.air.dbInterface.queryObject = query_object
         self.air.dbInterface.createObject = Mock()
@@ -68,7 +67,7 @@ class PersistentBeaconTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             ensure_persistent_beacon(self.air, self.id_file, 5000, 2)
 
-        self.assertEqual(queries, [(403000, 500124, self.dclass)])
+        self.assertEqual(queries, [(403000, 500124)])
         self.air.dbInterface.createObject.assert_not_called()
         self.air.sendActivate.assert_called_once_with(500124, 5000, 2)
         self.air.setAI.assert_called_once_with(500124, 300001)
@@ -77,7 +76,7 @@ class PersistentBeaconTests(unittest.TestCase):
         self.id_file.write_text("500125\n", encoding="utf-8")
         created = []
 
-        def query_object(database_id, do_id, callback, dclass=None):
+        def query_object(database_id, do_id, callback):
             callback(None, None)
 
         def create_object(database_id, dclass, fields, callback):

@@ -59,9 +59,11 @@ The AI moves an avatar between the two locations when its authoritative X positi
 
 This separates two kinds of update:
 
-- `setPosition` is a DC field update: interested clients that know the avatar receive its new coordinates.
+- `setPosition` is a DC field update: `broadcast` sends coordinates to clients interested in the avatar's location, while `ownrecv` also updates the owner's separate Owner View outside ordinary interest. Owner View presence therefore does not prove that the normal avatar is visible in `doId2do`.
 - `b_setLocation` changes the distributed object's parent/zone: clients may receive a location update, generate the object, or disable it as it enters or leaves their interest.
 
 Try it with two normal clients. Both start interested in zone 1. Move Alice past **x = 4** and Bob loses her avatar; press **Tab** in Bob's client and it enters view in zone 2. Move Alice back below the boundary and the reverse happens. The default inspector watches both zones and prints the avatar's actual location change. Run it with `--main-only` to observe the object leaving zone 1 instead.
 
 The boundary is deliberately fixed and the interest is manually toggled. This demonstrates State Server location and interest behavior; it is not automatic proximity or grid interest. To observe a client that is interested only in the main area, run `python -m demo.inspect --main-only --name MainOnly`.
+
+With Astron, UberDOG, and the fixed-mode AI running, `python tests/fixed_zones_live.py` starts two clients. Alice's Owner View sends movement input; Bob verifies the separate replicated avatar in zone 1, its removal from `doId2do`, its generation in zone 2 after he opens that interest, its removal when he closes zone 2, and its re-generation in zone 1. Bob closes zone 2 only after his normal avatar object receives Alice's final x=8 position; the test separately checks that Alice's Owner View received that position through `ownrecv`. The check observes position, distributed location, and Owner View state through their respective paths. Expiring the watchdog before the object-state sequence completes is a failure.

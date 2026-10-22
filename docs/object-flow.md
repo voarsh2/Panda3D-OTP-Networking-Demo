@@ -29,7 +29,7 @@ flowchart LR
     MD <--> DB[Database Server]
 ```
 
-The [interest guide](interest.md#the-interest-models-differ) compares the stock CMU and OTP/Astron interest models. The `panda3d-astron` submodule connects the Python repositories to Astron.
+The [interest guide](interest.md#the-interest-models-differ) compares the stock CMU and OTP/Astron interest models. The self-contained [`demo/networking`](../demo/networking) package connects Direct's Python repositories to Astron's protocol.
 
 ## Scaling and load distribution
 
@@ -54,9 +54,9 @@ This repo's launchers start one AI and one Astron daemon with several roles. The
 3. After the District interest completes, the AI creates the avatar. The default path generates it in District main; the grid path generates it directly in its Cartesian cell. The AI registers it as the client's session object, assigns the client as owner, and sets its AI authority.
 4. The owner gets a `DemoAvatarOV`, which handles movement commands and creates the local visual avatar. Other interested clients generate a regular `DemoAvatar`.
 
-The avatar's Owner View sends movement intent with `requestMove`. The Client Agent restricts that call to the owner. The AI validates the direction, updates position, and broadcasts `setPosition`. Clients render the state they receive; they do not choose the authoritative position.
+The avatar's Owner View sends movement intent with `requestMove`. The Client Agent restricts that call to the owner. The AI validates the direction and updates position. `setPosition` broadcasts coordinates to clients interested in the avatar's location; its `ownrecv` permission also sends the update to the owner independently of ordinary zone interest. Clients render the state they receive; they do not choose the authoritative position.
 
-Owner Views live in `doId2ownerView`, separately from the normal client-object map `doId2do`. The demo's client repository handles location messages for both maps so the owner's local view gets updated location metadata without being added to interest tracking.
+Owner Views live in `doId2ownerView`, separately from the normal client-object map `doId2do`. The demo's client repository handles location messages for both maps so the owner's local view gets updated location metadata without being added to interest tracking. `ownrecv` field updates also keep that Owner View current when its ordinary DO leaves interest. An ordinary `CLIENT_OBJECT_LEAVING` removes the normal DO through Direct's `deleteOrDelay()` lifecycle; it does not remove the separately tracked Owner View.
 
 ## How production expands this flow
 
@@ -69,9 +69,6 @@ This demo accepts a display name and creates one session avatar in one District.
 
 These are game workflows that can be built over CMU or Astron. Astron's ClientAgent, Message Director, State Server, AI, UberDOG, and database roles give them separate service boundaries; they do not implement the game's account, avatar, or travel rules.
 
-
-Persistence becomes more useful when a game needs to operate on objects whose players are offline. For example, an UberDOG service might award fuel to an offline player's vehicle. The game's server-side logic could activate that database-backed object through DBSS, apply the refill using its normal gameplay rules, and persist the updated fields. DBSS handles the database-backed distributed state; the game's AI or other authoritative service implements the actual refill operation. This is one reason the OTP/Astron service model separates persistence, object state, and game logic rather than tying all three to a connected client.
-
 ## DC field permissions
 
 | Field | Direction and flags | Purpose |
@@ -79,10 +76,10 @@ Persistence becomes more useful when a game needs to operate on objects whose pl
 | `login` | `clsend` | Client requests login through the global login object. |
 | `createAvatar` | `airecv` | UberDOG routes avatar creation to the AI. |
 | `requestMove` | `ownsend airecv` | Only the owner can send movement intent; AI receives it. |
-| `setPosition` | `required broadcast ram` | AI-authored position is sent to interested clients and included at generation. |
+| `setPosition` | `required broadcast ownrecv ram` | AI-authored position is sent to interested clients and the owner, and included at generation. |
 | `setActivationCount` | `required broadcast ram db` | Beacon count is sent at generation, replicated at runtime, and stored by DBSS. |
 
-`required` controls initial state sent when an object is generated. `broadcast` sends updates to clients that know the object. `ram` keeps state in the running State Server; `db` also writes the field to the database. `clsend` and `ownsend` describe client-send permissions; here, `airecv` marks the AI as a receiver. The stock CMU `ServerRepository` does not provide that separate AI route.
+`required` controls initial state sent when an object is generated. `broadcast` sends updates to clients that know the object; `ownrecv` sends updates to its owner. `ram` keeps state in the running State Server; `db` also writes the field to the database. `clsend` and `ownsend` describe client-send permissions; here, `airecv` marks the AI as a receiver. The stock CMU `ServerRepository` does not provide that separate AI route.
 
 ### Protocol checks and game authorization
 

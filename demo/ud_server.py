@@ -1,10 +1,9 @@
 from panda3d.core import loadPrcFileData
 
+# Apply before importing ShowBase so UberDOG runs headless.
 loadPrcFileData("", "window-type none")
 
 from direct.showbase.ShowBase import ShowBase
-from panda3d_astron.repository import AstronInternalRepository
-from panda3d_astron.msgtypes import CLIENTAGENT_DONE_INTEREST_RESP
 
 from demo.constants import (
     DC_FILE,
@@ -16,6 +15,8 @@ from demo.constants import (
     STATE_SERVER_CHANNEL,
     UD_CHANNEL,
 )
+from demo.networking.internal_repository import AstronInternalRepository
+from demo.networking.msgtypes import CLIENTAGENT_DONE_INTEREST_RESP
 from demo.startup import write_ready_marker
 
 

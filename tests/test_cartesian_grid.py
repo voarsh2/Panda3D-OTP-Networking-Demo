@@ -1,8 +1,8 @@
+import contextlib
+import io
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
-import contextlib
-import io
 
 from direct.distributed.CartesianGridBase import CartesianGridBase
 from direct.distributed.DoInterestManager import (

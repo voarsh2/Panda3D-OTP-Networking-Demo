@@ -6,12 +6,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "references" / "panda3d-astron"))
 
-from panda3d.core import TextNode, loadPrcFileData
 from direct.gui.OnscreenText import OnscreenText
-
 from direct.task import Task
+from panda3d.core import TextNode, loadPrcFileData
 
 from demo.cartesian_grid import grid_interest_window
 from demo.cartesian_grid_client import DemoCartesianGridClient

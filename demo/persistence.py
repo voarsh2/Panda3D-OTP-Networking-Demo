@@ -28,7 +28,6 @@ def ensure_persistent_beacon(air, id_file, parent_id, zone_id):
         air.dbId,
         do_id,
         on_query_result,
-        dclass=dclass,
     )
 
 

@@ -1,11 +1,10 @@
 import argparse
 
-from direct.showbase.ShowBase import ShowBase
-from direct.gui.OnscreenText import OnscreenText
 from direct.distributed.DoInterestManager import DoInterestManager, InterestState
+from direct.gui.OnscreenText import OnscreenText
 from direct.showbase.MessengerGlobal import messenger
-from panda3d.core import URLSpec, WindowProperties
-from panda3d_astron.repository import AstronClientRepository
+from direct.showbase.ShowBase import ShowBase
+from panda3d.core import GraphicsWindow, URLSpec, WindowProperties
 
 from demo.constants import (
     CLIENT_AGENT_HOST,
@@ -17,6 +16,8 @@ from demo.constants import (
     MANAGEMENT_ZONE,
     VERSION_STRING,
 )
+from demo.networking.client_repository import AstronClientRepository
+
 
 
 class DemoClientRepository(AstronClientRepository):
@@ -146,7 +147,7 @@ class DemoClientRepository(AstronClientRepository):
 class DemoClient(ShowBase):
     def __init__(self, name, extra_dc_file_names=()):
         super().__init__()
-        if self.win is not None and hasattr(self.win, "requestProperties"):
+        if isinstance(self.win, GraphicsWindow):
             properties = WindowProperties()
             properties.setTitle(f"Panda3D Networking Demo - {name}")
             self.win.requestProperties(properties)

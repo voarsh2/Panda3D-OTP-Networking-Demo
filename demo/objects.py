@@ -9,6 +9,9 @@ from direct.distributed.DistributedNodeAI import DistributedNodeAI
 from direct.showbase.MessengerGlobal import messenger
 from direct.showbase.ShowBaseGlobal import globalClock
 from direct.task import Task
+
+from panda3d.core import TextNode
+
 from demo.constants import (
     DISTRICT_ID,
     GAME_ROOT_ID,
@@ -20,7 +23,6 @@ from demo.constants import (
     LOGIN_WORLD_ROOT_INTEREST_ID,
     ZONE_CROSSING_X,
 )
-from panda3d.core import TextNode
 
 
 class DemoLoginManager(DistributedObjectGlobal):
@@ -237,7 +239,7 @@ class DemoAvatar(DistributedNode):
 
 
 class DemoAvatarOV(DistributedObjectOV):
-    """Render the local session avatar; remote clients use DemoAvatar."""
+    """Owner's session view, separate from ordinary zone visibility."""
 
     def __init__(self, cr):
         super().__init__(cr)
@@ -261,11 +263,13 @@ class DemoAvatarOV(DistributedObjectOV):
         self.avatar.setName(name)
 
     def setPosition(self, x, y):
+        # The DC ownrecv permission keeps this view current outside its interests.
         self.last_position = (float(x), float(y))
         self.avatar.setPosition(x, y)
         messenger.send("demo-owner-avatar-position", [float(x), float(y)])
 
     def requestMove(self, dx, dy):
+        # Send owner movement intent independently of normal DO visibility.
         self.sendUpdate("requestMove", [dx, dy])
 
 

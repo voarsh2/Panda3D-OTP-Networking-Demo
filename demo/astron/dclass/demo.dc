@@ -19,7 +19,8 @@ dclass DemoDistrict {
 
 dclass DemoAvatar {
   setName(string name = "Guest") required broadcast ram;
-  setPosition(int16 / 100 x, int16 / 100 y) required broadcast ram;
+  // Broadcast position to interested clients and keep the Owner View current across interests.
+  setPosition(int16 / 100 x, int16 / 100 y) required broadcast ownrecv ram;
   requestMove(int8 dx, int8 dy) ownsend airecv;
 };
 

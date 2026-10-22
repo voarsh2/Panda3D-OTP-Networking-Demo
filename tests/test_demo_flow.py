@@ -6,6 +6,9 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from direct.distributed.DistributedNode import DistributedNode
+from panda3d.core import NodePath
+
 from demo.client import DemoClient, DemoClientRepository
 from demo.constants import (
     AI_CHANNEL,
@@ -26,8 +29,6 @@ from demo.objects import (
     DemoLoginManagerUD,
 )
 from demo.startup import write_ready_marker
-from direct.distributed.DistributedNode import DistributedNode
-from panda3d.core import NodePath
 
 
 class DemoFlowTests(unittest.TestCase):

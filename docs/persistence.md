@@ -20,6 +20,27 @@ This matters when a game needs to operate on an object whose player is offline. 
 
 For a simple field edit that does not need live-object behavior, a direct database query or update may be enough. Activate through DBSS when existing distributed-object or AI logic needs to run against the stored state.
 
+## Verify persistence across restart
+
+With Astron running, `python tests/database_live.py` creates a temporary database object, queries its DC field, deletes it, and confirms it is gone.
+
+With Astron, UberDOG, and the fixed-mode AI running, query the live beacon through a client:
+
+```powershell
+python tests/persistence_live.py --snapshot "$env:TEMP\panda-activation-count.txt"
+```
+
+Stop all three services, restart them with the same Astron database, then run the same command again. The check reads the beacon from the client repository and requires its activation count to exceed the saved snapshot.
+
+## Source map
+
+| Area | File |
+|---|---|
+| Beacon create, query, and DBSS activation | [`demo/persistence.py`](../demo/persistence.py) |
+| Astron database messages used by the demo | [`demo/networking/database.py`](../demo/networking/database.py) |
+| Database create/query/delete protocol check | [`tests/database_live.py`](../tests/database_live.py) |
+| Live restart check | [`tests/persistence_live.py`](../tests/persistence_live.py) |
+
 See Astron's [DBSS activation protocol](https://github.com/Astron/Astron/blob/master/docs/protocol/12-stateserver.md) and this demo's [beacon activation code](../demo/persistence.py).
 
 This demo shows a database-backed beacon being activated and saved. It does not implement the offline car or reward workflows.
